@@ -1,13 +1,16 @@
 import SwiftUI
 import UIKit
+import PlainDomain
 import PlainDesignSystem
 
 /// Commands the shortcut bar sends to the text view.
 @MainActor
 final class EditorController {
-    fileprivate weak var textView: UITextView?
+    weak var textView: UITextView?
     fileprivate var onChange: ((String) -> Void)?
     fileprivate var highlighter = MarkdownSyntaxHighlighter(isMonospaced: true, size: 16)
+    /// Called after a photo's line has left the text, to delete the photo too.
+    var onDeletePhoto: ((UUID) -> Void)?
 
     func focus() { textView?.becomeFirstResponder() }
     func resign() { textView?.resignFirstResponder() }
@@ -40,12 +43,56 @@ final class EditorController {
         edit(range, with: snippet, caret: range.location + (caretOffset ?? (snippet as NSString).length))
     }
 
+    /// Puts a photo on a line of its own at the caret.
+    func insertPhoto(_ photo: NotePhoto) {
+        guard let textView = textView as? MarkdownUITextView else { return }
+        textView.photos[photo.id] = photo
+        let text = textView.text as NSString
+        var location = NSMaxRange(textView.selectedRange)
+        // Never inside another photo's line: go below it.
+        if let inside = textView.photoLines.first(where: { location > $0.content.location && location <= NSMaxRange($0.content) }) {
+            location = NSMaxRange(inside.line)
+        }
+        let breakBefore = location > 0 && text.character(at: location - 1) != 10
+        let breakAfter = location >= text.length || text.character(at: location) != 10
+        let snippet = (breakBefore ? "\n" : "") + PhotoMarkdown.line(for: photo.id) + (breakAfter ? "\n" : "")
+        edit(NSRange(location: location, length: 0), with: snippet, caret: location + (snippet as NSString).length)
+    }
+
+    /// Moves a whole line so it starts at `target`, a line start, as one undo step.
+    func moveLine(_ line: NSRange, to target: Int) {
+        guard let textView, target < line.location || target > NSMaxRange(line) else { return }
+        let text = textView.text as NSString
+        var moving = text.substring(with: line)
+        if !moving.hasSuffix("\n") { moving += "\n" }
+        if target < line.location {
+            let between = text.substring(with: NSRange(location: target, length: line.location - target))
+            edit(NSRange(location: target, length: NSMaxRange(line) - target), with: moving + between, caret: target + (moving as NSString).length - 1)
+        } else {
+            var between = text.substring(with: NSRange(location: NSMaxRange(line), length: target - NSMaxRange(line)))
+            // Dropped after a last line that has no line break of its own.
+            if !between.hasSuffix("\n") {
+                between += "\n"
+                moving.removeLast()
+            }
+            let replacement = between + moving
+            edit(NSRange(location: line.location, length: target - line.location), with: replacement, caret: line.location + (replacement as NSString).length - 1)
+        }
+    }
+
+    func replace(_ range: NSRange, with replacement: String, caret: Int) {
+        edit(range, with: replacement, caret: caret)
+    }
+
     /// Every programmatic edit goes through `UITextInput`, not the text storage.
     /// That is what puts the change on the undo stack, so ⌘Z and shake-to-undo
     /// treat a shortcut-bar edit exactly like something that was typed.
     private func edit(_ range: NSRange, with replacement: String, caret: Int, length: Int = 0) {
         guard let textView, let textRange = textView.plainTextRange(for: range) else { return }
+        let photoView = textView as? MarkdownUITextView
+        photoView?.isApplyingEdit = true
         textView.replace(textRange, withText: replacement)
+        photoView?.isApplyingEdit = false
 
         let bounded = min(max(caret, 0), (textView.text as NSString).length)
         textView.selectedRange = NSRange(location: bounded, length: length)
@@ -69,6 +116,9 @@ struct MarkdownTextView: UIViewRepresentable {
     var isFocusMode: Bool = false
     /// Keeps the caret line near the middle of the screen while typing.
     var isTypewriter: Bool = false
+    /// Photos the text can place, drawn where their lines are.
+    var photos: [NotePhoto] = []
+    var photoData: (UUID) -> Data? = { _ in nil }
     var controller: EditorController
 
     func makeUIView(context: Context) -> UITextView {
@@ -90,6 +140,8 @@ struct MarkdownTextView: UIViewRepresentable {
         view.smartInsertDeleteType = .no
         view.tintColor = UIColor(PlainPalette.ink)
         view.text = text
+        view.photos = photoIndex
+        view.photoData = photoData
         controller.textView = view
         controller.onChange = { context.coordinator.push($0) }
         controller.highlighter = highlighter
@@ -114,11 +166,22 @@ struct MarkdownTextView: UIViewRepresentable {
         context.coordinator.isTypewriter = isTypewriter
         view.contentInset.bottom = isTypewriter ? view.bounds.height * 0.45 : 0
 
-        guard needsTextSync || context.coordinator.appliedStyle != highlighter else { return }
+        var photosChanged = false
+        if let view = view as? MarkdownUITextView {
+            view.photoData = photoData
+            photosChanged = view.photos != photoIndex
+            if photosChanged { view.photos = photoIndex }
+        }
+
+        guard needsTextSync || photosChanged || context.coordinator.appliedStyle != highlighter else { return }
         context.coordinator.appliedStyle = highlighter
         highlighter.configure(view)
         highlighter.apply(to: view)
         context.coordinator.centreCaret(view)
+    }
+
+    private var photoIndex: [UUID: NotePhoto] {
+        Dictionary(photos.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     }
 
     private var highlighter: MarkdownSyntaxHighlighter {
@@ -133,6 +196,20 @@ struct MarkdownTextView: UIViewRepresentable {
         var isTypewriter = false
 
         init(parent: MarkdownTextView) { self.parent = parent }
+
+        /// Typing into or cutting through a photo's line is redirected, so the
+        /// marker under the photo is never left half there.
+        func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
+            guard let view = textView as? MarkdownUITextView, !view.isApplyingEdit,
+                  let adjusted = view.photoSafeEdit(for: range, replacement: text) else { return true }
+            switch adjusted {
+            case .moveCaret(let location):
+                textView.selectedRange = NSRange(location: location, length: 0)
+            case .replace(let range, let replacement, let caret):
+                parent.controller.replace(range, with: replacement, caret: caret)
+            }
+            return false
+        }
 
         func textViewDidChange(_ textView: UITextView) {
             parent.controller.highlighter.apply(to: textView)
@@ -212,10 +289,30 @@ struct MarkdownSyntaxHighlighter: Equatable {
         enumerate(pattern: "(^|\\s)(#[a-zA-Z0-9-]+)(?=\\s|$)", in: text, range: full) { match in
             storage.addAttribute(.foregroundColor, value: UIColor(PlainPalette.inkSecondary), range: match.range(at: 2))
         }
+        // Photo lines: the marker turns invisible and the line as tall as
+        // the photo that is drawn over it.
+        let photoView = view as? MarkdownUITextView
+        if let photoView {
+            photoView.photoLines = photoView.findPhotoLines()
+            for photo in photoView.photoLines {
+                let style = NSMutableParagraphStyle()
+                style.minimumLineHeight = photo.height + PhotoLine.gap * 2
+                style.maximumLineHeight = style.minimumLineHeight
+                storage.addAttributes([
+                    .font: UIFont.systemFont(ofSize: 1),
+                    .foregroundColor: UIColor.clear,
+                    .paragraphStyle: style
+                ], range: photo.line)
+            }
+        }
         if dimsInactiveParagraphs { dim(view) }
         storage.endEditing()
 
         view.selectedRange = selected
+        // The character before the caret may be a hidden photo marker; what is
+        // typed next should not inherit its invisible style.
+        configure(view)
+        photoView?.layoutPhotoTiles()
     }
 
     /// Focus mode: everything but the caret's own paragraph fades back.
@@ -286,6 +383,25 @@ extension NSRange {
 /// the shortcut bar does.
 final class MarkdownUITextView: UITextView {
     weak var controller: EditorController?
+
+    var photos: [UUID: NotePhoto] = [:]
+    var photoData: (UUID) -> Data? = { _ in nil }
+    var photoLines: [PhotoLine] = []
+    var photoTiles: [PhotoTileView] = []
+    var draggedTile: PhotoTileView?
+    var dragOffset: CGFloat = 0
+    let dropIndicator = UIView()
+    /// Set while the controller edits, so its own changes are not redirected.
+    var isApplyingEdit = false
+    private var laidOutWidth: CGFloat = 0
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        // Photo heights follow the width, so a new width needs a new pass.
+        guard bounds.width != laidOutWidth else { return }
+        laidOutWidth = bounds.width
+        if !photos.isEmpty { controller?.highlighter.apply(to: self) }
+    }
 
     override var keyCommands: [UIKeyCommand]? {
         [

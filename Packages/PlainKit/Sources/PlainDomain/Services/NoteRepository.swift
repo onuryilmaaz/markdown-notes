@@ -14,6 +14,9 @@ public protocol NoteRepository: AnyObject {
     func deleteFolder(id: UUID) throws
 
     func save(_ note: Note) throws
+    func addPhoto(_ photo: NotePhoto, jpegData: Data, to noteID: UUID) throws
+    func photoData(id: UUID) throws -> Data?
+    func deletePhoto(id: UUID) throws
     /// Moves notes to the trash; `purge` is what actually destroys them.
     func delete(noteIDs: Set<UUID>) throws
     func restore(noteIDs: Set<UUID>) throws

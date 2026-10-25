@@ -7,6 +7,8 @@ struct SettingsView: View {
     @Environment(NotesStore.self) private var store
     @Environment(Router.self) private var router
     @Environment(AppSettings.self) private var settings
+    @Environment(PurchaseStore.self) private var purchases
+    @Environment(LockSession.self) private var locks
 
     @State private var confirmingReset = false
     /// The store is built at launch, so a change here only lands next time.
@@ -26,6 +28,7 @@ struct SettingsView: View {
 
                 ScrollView {
                     VStack(spacing: 14) {
+                        proCard
                         libraryCard
                         exchangeCard
                         appearanceCard(selection: $settings.appearance)
@@ -83,6 +86,28 @@ struct SettingsView: View {
         } message: {
             Text("Every note and folder on this device goes. There is no cloud copy.")
         }
+    }
+
+    private var proCard: some View {
+        Button { router.present(.pro(nil)) } label: {
+            HStack(spacing: 14) {
+                Image(systemName: purchases.hasPro ? "checkmark.seal.fill" : "sparkles")
+                    .font(.system(size: 24, weight: .medium))
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Plain Pro").font(PlainFont.headline)
+                    Text(purchases.hasPro ? "Your Pro tools are ready" : "More focus. More possibilities.")
+                        .font(PlainFont.callout)
+                        .foregroundStyle(PlainPalette.inkSecondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold))
+            }
+            .foregroundStyle(PlainPalette.ink)
+            .padding(20)
+            .plainCard()
+        }
+        .buttonStyle(PressableButtonStyle())
+        .accessibilityIdentifier("settings-pro")
     }
 
     /// There is no account in this app, so the top card counts what is actually
@@ -158,11 +183,18 @@ struct SettingsView: View {
             exchangeMessage = "There is nothing to export yet."
             return
         }
-        do {
-            let url = try LibraryExchange.archive(notes: store.notes, folderName: { store.folderName($0) })
-            exportedFile = ExportedFile(url: url)
-        } catch {
-            exchangeMessage = "The library could not be packaged."
+        Task {
+            let locked = Set(store.notes.filter(\.isLocked).map(\.id))
+            guard await locks.unlock(locked) else {
+                if let message = locks.errorMessage { exchangeMessage = LocalizedStringKey(message) }
+                return
+            }
+            do {
+                let url = try LibraryExchange.archive(notes: store.notes, folderName: { store.folderName($0) }, photoData: store.photoData)
+                exportedFile = ExportedFile(url: url)
+            } catch {
+                exchangeMessage = "The library could not be packaged."
+            }
         }
     }
 
@@ -203,6 +235,10 @@ struct SettingsView: View {
                 guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
                 UIApplication.shared.open(url)
             }
+            PlainDivider()
+            ValueRow("Privacy policy") { router.present(.privacy) }
+            PlainDivider()
+            ValueRow("Widgets") { router.present(.widgets) }
         }
         .plainCard()
     }

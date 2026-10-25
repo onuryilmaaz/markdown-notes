@@ -42,6 +42,12 @@ name, and the "Plain 1.0 · build 214" line in Settings.
 
 ## What it does
 
+**Photos** — attach photos from the system photo picker, open a swipeable gallery,
+zoom, or remove an attachment in the editor. Photos are optimized to JPEG with a
+maximum 2048px edge; the original stays in Photos. Small thumbnails keep lists
+and widgets light. Markdown exports with photos become ZIP bundles containing
+relative image links and JPEG files; PDF export includes photo pages.
+
 **Writing** — markdown editor with live highlighting, a shortcut bar, and three
 views of the same note (write, split, read). Focus mode dims every paragraph but
 the one under the caret; typewriter mode keeps that line in the middle of the
@@ -67,7 +73,7 @@ here.
 
 **The rest of iOS** — Shortcuts and Siri (create, append, open, search) through
 App Intents, notes in Spotlight, a share extension that saves from any app, Lock
-Screen and Control Centre buttons, home-screen widgets, Live Activities, and a
+Screen and Control Centre buttons, five home-screen widgets (today, pinned, recent, photo and quick note), Live Activities, and a
 `plain://` URL scheme (`new`, `note`, `search`, `trash`).
 
 **Not in v1** — sending a note to another person. Collaboration needs a service
@@ -137,7 +143,9 @@ conformance, not touching a view.
   `LiveSession` value; ActivityKit is wrapped so features never import it.
 * **Widgets** — the app writes a small `WidgetSnapshot` to the shared app group
   after every mutation and reloads timelines; the extension only ever reads.
-* **Schema versions** — the models live inside `PlainSchemaV1` and are reached
+* **Schema versions** — version 2 adds externally stored photo records through a
+  tested lightweight migration from version 1. Existing note shapes stay frozen.
+   the models live inside `PlainSchemaV1` and are reached
   through type aliases, so the shape of version 1 stays in the code once version
   2 exists. A `SchemaMigrationPlan` is registered with the container while there
   is still nothing to migrate: a plan added after a store has already been
@@ -196,3 +204,29 @@ Turkish on purpose.
 
 A shipped build has none of this: it starts empty and stays that way until
 somebody writes something.
+
+## Plain Pro
+
+The notebook remains free: unlimited notes, iCloud, locking and Markdown
+backups. Pro adds focus/typewriter modes, version history, PDF export and
+on-device assistance on compatible devices. StoreKit 2 verifies access and
+handles restored, refunded and expired purchases. No account or backend is
+required for these local features.
+
+See [the monetization and release guide](Docs/Monetization.md) for product IDs,
+initial pricing, local StoreKit tests and App Store Connect setup. Use the
+`Plain-StoreKit` scheme for local purchases; archive with `Plain`.
+
+## Motion and widget gallery
+
+Home cards enter with a short spring sequence, note cards zoom into the reading
+view, and photo thumbnails and checkboxes respond to changes. Reduce Motion
+turns off these animated transitions. The Widgets button on Home opens a gallery
+that renders the same shared components used by the extension. Each widget opens
+its own note or a fresh page; locked-note bodies and photos are excluded from
+widget snapshots.
+
+DEBUG screenshot fixtures can opt into `PLAIN_SEED_PHOTO=1` with `PLAIN_SEED=1`.
+Production builds never seed photos. The current tests cover a real on-disk V1
+migration, photo retention in trash, permanent photo deletion, image downsizing,
+PDF photo pages, and gallery/picker navigation.

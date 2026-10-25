@@ -1,0 +1,77 @@
+{
+  "identifier": "94A06781-1029-40E7-83B0-81FD32046A18",
+  "nonRenewingSubscriptions": [],
+  "products": [],
+  "settings": {
+    "_failTransactionsEnabled": false,
+    "_locale": "en_US",
+    "_storefront": "USA"
+  },
+  "subscriptionGroups": [
+    {
+      "id": "CE536CB9-5AFA-4C1A-965F-E87AC38F144A",
+      "localizations": [],
+      "name": "Plain Pro",
+      "subscriptions": [
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "2.99",
+          "familyShareable": false,
+          "groupNumber": 1,
+          "internalID": "940003",
+          "introductoryOffer": null,
+          "localizations": [
+            {
+              "description": "All Pro tools, billed monthly.",
+              "displayName": "Plain Pro Monthly",
+              "locale": "en_US"
+            },
+            {
+              "description": "Tüm Pro araçları, aylık ücretlendirme.",
+              "displayName": "Plain Pro Aylık",
+              "locale": "tr_TR"
+            }
+          ],
+          "productID": "com.onur6541.plain.pro.monthly",
+          "recurringSubscriptionPeriod": "P1M",
+          "referenceName": "Plain Pro Monthly",
+          "subscriptionGroupID": "CE536CB9-5AFA-4C1A-965F-E87AC38F144A",
+          "type": "RecurringSubscription",
+          "winBackOffers": []
+        },
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "19.99",
+          "familyShareable": false,
+          "groupNumber": 1,
+          "internalID": "940002",
+          "introductoryOffer": null,
+          "localizations": [
+            {
+              "description": "Focused writing, version history, PDF export and on-device assistance.",
+              "displayName": "Plain Pro Yearly",
+              "locale": "en_US"
+            },
+            {
+              "description": "Tüm Pro araçları, yıllık ücretlendirme.",
+              "displayName": "Plain Pro Yıllık",
+              "locale": "tr_TR"
+            }
+          ],
+          "productID": "com.onur6541.plain.pro.annual",
+          "recurringSubscriptionPeriod": "P1Y",
+          "referenceName": "Plain Pro Yearly",
+          "subscriptionGroupID": "CE536CB9-5AFA-4C1A-965F-E87AC38F144A",
+          "type": "RecurringSubscription",
+          "winBackOffers": []
+        }
+      ]
+    }
+  ],
+  "version": {
+    "major": 3,
+    "minor": 0
+  }
+}

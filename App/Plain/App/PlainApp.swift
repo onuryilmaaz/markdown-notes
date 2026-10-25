@@ -9,6 +9,7 @@ struct PlainApp: App {
     @State private var router: Router
     @State private var liveActivities: LiveActivityController
     @State private var locks = LockSession()
+    @State private var purchases = PurchaseStore()
 
     init() {
         // App initialisation happens on the main thread; make that explicit so
@@ -34,6 +35,7 @@ struct PlainApp: App {
                 .environment(router)
                 .environment(liveActivities)
                 .environment(locks)
+                .environment(purchases)
                 .preferredColorScheme(settings.appearance.colorScheme)
                 .tint(PlainPalette.ink)
                 .task {
@@ -43,6 +45,7 @@ struct PlainApp: App {
                     #if DEBUG
                     DebugLaunch.applyIfNeeded(store: store, router: router, settings: settings, liveActivities: liveActivities)
                     #endif
+                    await purchases.prepare()
                 }
         }
     }

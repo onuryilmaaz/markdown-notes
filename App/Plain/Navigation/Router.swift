@@ -24,6 +24,9 @@ enum AppSheet: Identifiable, Hashable {
     case newFolder
     case renameFolder(UUID)
     case assist(UUID, NoteAssistantJob)
+    case pro(ProFeature?)
+    case privacy
+    case widgets
 
     var id: Self { self }
 }

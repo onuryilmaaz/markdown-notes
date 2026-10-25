@@ -159,16 +159,15 @@ struct SchemaTests {
     @Test("The persisted shape keeps the names it already had")
     func entityNames() {
         let names = Set(PlainStore.schema.entities.map(\.name))
-        #expect(names == ["NoteEntity", "FolderEntity", "RevisionEntity"])
+        #expect(names == ["NoteEntity", "FolderEntity", "RevisionEntity", "PhotoEntity"])
     }
 
     @Test("The schema is stamped with a version")
     func version() {
-        #expect(PlainStore.schema.version == Schema.Version(1, 0, 0))
-        #expect(PlainMigrationPlan.schemas.count == 1)
-        // Nothing to migrate yet; the plan exists so that there is somewhere
-        // for the first real stage to go.
-        #expect(PlainMigrationPlan.stages.isEmpty)
+        #expect(PlainStore.schema.version == Schema.Version(2, 0, 0))
+        #expect(PlainMigrationPlan.schemas.count == 2)
+        // Photo records are added in a lightweight migration from version 1.
+        #expect(PlainMigrationPlan.stages.count == 1)
     }
 
     @Test("A container built from the versioned schema still reads and writes")

@@ -23,6 +23,7 @@ final class LiveActivityController {
     }
 
     func start(note: Note, session: LiveSession) {
+        guard !note.isLocked else { return }
         guard ActivityAuthorizationInfo().areActivitiesEnabled else {
             isSupported = false
             return
@@ -48,6 +49,7 @@ final class LiveActivityController {
     }
 
     func update(note: Note, session: LiveSession) {
+        guard !note.isLocked else { return end(noteID: note.id) }
         guard let activity = activities[note.id] else { return }
         let state = NoteActivityAttributes.ContentState(
             excerpt: note.preview,
@@ -64,7 +66,7 @@ final class LiveActivityController {
 
     /// Drops activities whose note or session no longer exists.
     func reconcile(with notes: [Note]) {
-        let liveIDs = Set(notes.filter { $0.isLive() }.map(\.id))
+        let liveIDs = Set(notes.filter { $0.isLive() && !$0.isLocked }.map(\.id))
         for id in activities.keys where !liveIDs.contains(id) {
             end(noteID: id)
         }

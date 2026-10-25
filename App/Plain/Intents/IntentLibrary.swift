@@ -28,7 +28,7 @@ enum IntentLibrary {
     static func search(_ term: String) -> [Note] {
         let trimmed = term.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [] }
-        return notes().filter { $0.matches(trimmed) }
+        return notes().filter { $0.isLocked ? $0.title.localizedCaseInsensitiveContains(trimmed) : $0.matches(trimmed) }
     }
 
     @discardableResult
@@ -43,6 +43,7 @@ enum IntentLibrary {
         guard var note = notes().first(where: { $0.id == id }) else {
             throw IntentLibraryError.noteNotFound
         }
+        guard !note.isLocked else { throw IntentLibraryError.noteLocked }
         let body = note.body.hasSuffix("\n") || note.body.isEmpty ? note.body : note.body + "\n"
         note.body = body + NoteExchange.normalise(text) + "\n"
         note.updatedAt = .now
@@ -61,10 +62,12 @@ enum IntentLibrary {
 
 enum IntentLibraryError: Error, LocalizedError {
     case noteNotFound
+    case noteLocked
 
     var errorDescription: String? {
         switch self {
         case .noteNotFound: "That note is no longer in Plain."
+        case .noteLocked: "Open and unlock this note in Plain before editing it."
         }
     }
 }

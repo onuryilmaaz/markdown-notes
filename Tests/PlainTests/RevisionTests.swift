@@ -89,6 +89,19 @@ struct RevisionStoreTests {
         #expect(try repository.revisions(for: note.id).isEmpty)
     }
 
+    @Test("The automatic trash sweep also destroys private revision bodies")
+    func expiredTrashRemovesHistory() throws {
+        let repository = makeRepository()
+        let note = Note(title: "Private", body: "private body", deletedAt: .now.addingTimeInterval(-31 * 86_400))
+        try repository.save(note)
+        try repository.record(NoteRevision(noteID: note.id, title: note.title, body: "older private body"))
+
+        try repository.purgeDeleted(before: .now.addingTimeInterval(-30 * 86_400))
+
+        #expect(try repository.loadDeletedNotes().isEmpty)
+        #expect(try repository.revisions(for: note.id).isEmpty)
+    }
+
     @Test("A locked note stays locked through a round trip")
     func lockSurvives() throws {
         let repository = makeRepository()

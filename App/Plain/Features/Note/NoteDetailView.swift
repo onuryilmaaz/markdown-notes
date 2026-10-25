@@ -10,12 +10,14 @@ struct NoteDetailView: View {
     @Environment(AppSettings.self) private var settings
     @Environment(LiveActivityController.self) private var liveActivities
     @Environment(LockSession.self) private var locks
+    @Environment(PurchaseStore.self) private var purchases
 
     @State private var confirmingDelete = false
     @State private var exportedFile: ExportedFile?
     @State private var exportFailed = false
     @State private var isFinding = false
     @State private var term = ""
+    @State private var openedPhoto: NotePhoto?
     @FocusState private var findFocused: Bool
 
     private var note: Note? { store.note(noteID) }
@@ -33,10 +35,31 @@ struct NoteDetailView: View {
                     } else {
                     ScrollView {
                         VStack(spacing: 14) {
+                        if !note.unplacedPhotos.isEmpty {
+                            NotePhotoGallery(photos: note.unplacedPhotos)
+                        }
                         MarkdownRenderedView(
                             document: MarkdownDocument(parsing: searchFiltered(note.body)),
                             bodySize: settings.textSize - 1,
-                            onToggleTask: { line in store.toggleTask(atLine: line, in: note.id) }
+                            onToggleTask: { line in
+                                let sourceLine: Int
+                                let needle = term.trimmingCharacters(in: .whitespacesAndNewlines)
+                                if isFinding, !needle.isEmpty {
+                                    // The filtered document joins matches with
+                                    // one blank line. Translate its task index
+                                    // back to the original note before editing.
+                                    let matches = note.body.components(separatedBy: "\n").enumerated()
+                                        .filter { $0.element.localizedCaseInsensitiveContains(needle) }
+                                    guard line.isMultiple(of: 2), matches.indices.contains(line / 2) else { return }
+                                    sourceLine = matches[line / 2].offset
+                                } else {
+                                    sourceLine = line
+                                }
+                                store.toggleTask(atLine: sourceLine, in: note.id)
+                            },
+                            photos: note.photos,
+                            photoData: store.photoData,
+                            onOpenPhoto: { openedPhoto = $0 }
                         )
                         .padding(18)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -73,6 +96,9 @@ struct NoteDetailView: View {
         .sheet(item: $exportedFile) { file in
             ShareSheet(items: [file.url])
         }
+        .sheet(item: $openedPhoto) { photo in
+            PhotoViewer(photos: note?.photos ?? [photo], selectedID: photo.id)
+        }
         .alert("Could not export that note", isPresented: $exportFailed) {
             Button("OK", role: .cancel) {}
         }
@@ -94,6 +120,10 @@ struct NoteDetailView: View {
                 Task { await locks.unlock(note.id) }
             }
             .padding(.horizontal, 14)
+            if let message = locks.errorMessage {
+                Text(LocalizedStringKey(message)).font(PlainFont.callout)
+                    .foregroundStyle(PlainPalette.inkSecondary)
+            }
         }
         .padding(.horizontal, Metrics.Space.gutter)
         .padding(.bottom, 10)
@@ -189,11 +219,15 @@ struct NoteDetailView: View {
     }
 
     private func exportMarkdown(_ note: Note) {
-        do { exportedFile = ExportedFile(url: try LibraryExchange.markdownFile(for: note)) } catch { exportFailed = true }
+        do { exportedFile = ExportedFile(url: try LibraryExchange.markdownFile(for: note, photoData: store.photoData)) } catch { exportFailed = true }
     }
 
     private func exportPDF(_ note: Note) {
-        do { exportedFile = ExportedFile(url: try NotePDF.file(for: note, bodySize: settings.textSize - 1)) } catch { exportFailed = true }
+        guard purchases.hasPro else {
+            router.present(.pro(.pdf))
+            return
+        }
+        do { exportedFile = ExportedFile(url: try NotePDF.file(for: note, bodySize: settings.textSize - 1, photoData: store.photoData)) } catch { exportFailed = true }
     }
 
     private func header(for note: Note) -> some View {
@@ -207,16 +241,27 @@ struct NoteDetailView: View {
                     Menu("Assist", systemImage: "sparkles") {
                         ForEach(NoteAssistant.Job.allCases) { job in
                             Button(LocalizedStringKey(job.label), systemImage: job.icon) {
-                                router.present(.assist(note.id, NoteAssistantJob(kind: job)))
+                                if purchases.hasPro {
+                                    router.present(.assist(note.id, NoteAssistantJob(kind: job)))
+                                } else {
+                                    router.present(.pro(.assistant))
+                                }
                             }
                         }
                     }
                 }
-                Button("History", systemImage: "clock.arrow.circlepath") { router.push(.history(note.id)) }
+                Button("History", systemImage: "clock.arrow.circlepath") {
+                    if purchases.hasPro { router.push(.history(note.id)) }
+                    else { router.present(.pro(.history)) }
+                }
                 Button(
                     note.isLocked ? "Remove lock" : "Lock note",
                     systemImage: note.isLocked ? "lock.open" : "lock"
                 ) {
+                    if !note.isLocked {
+                        liveActivities.end(noteID: note.id)
+                        store.endLive(noteID: note.id)
+                    }
                     store.setLocked(!note.isLocked, for: note.id)
                     if note.isLocked { locks.forget(note.id) }
                 }
@@ -224,7 +269,7 @@ struct NoteDetailView: View {
                     withAnimation(.snappy) { isFinding = true }
                     findFocused = true
                 }
-                Button("Export markdown", systemImage: "doc.text") { exportMarkdown(note) }
+                Button(note.photos.isEmpty ? "Export markdown" : "Export Markdown + photos", systemImage: "doc.text") { exportMarkdown(note) }
                 Button("Export PDF", systemImage: "doc.richtext") { exportPDF(note) }
                 Menu("Move to") {
                     Button("All Notes") { store.move(noteID: note.id, to: nil) }
@@ -239,6 +284,7 @@ struct NoteDetailView: View {
                     .frame(width: 38, height: 38)
                     .background(PlainPalette.surface, in: .circle)
             }
+            .disabled(isHidden(note))
             .accessibilityLabel("Note options")
         }
     }
@@ -259,6 +305,7 @@ struct NoteDetailView: View {
                     router.push(.live(note.id))
                 }
             }
+            .disabled(isHidden(note))
             CircleIconButton("trash", label: "Delete note") { confirmingDelete = true }
         }
         .padding(.horizontal, Metrics.Space.gutter)

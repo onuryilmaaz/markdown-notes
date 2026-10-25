@@ -59,7 +59,7 @@ final class NotesStore {
     }
 
     func folderName(_ id: UUID?) -> String {
-        folder(id)?.name ?? "All Notes"
+        folder(id)?.name ?? String(localized: "All Notes")
     }
 
     func count(in folder: Folder) -> Int {
@@ -133,6 +133,30 @@ final class NotesStore {
 
     func revisions(for noteID: UUID) -> [NoteRevision] {
         (try? repository.revisions(for: noteID)) ?? []
+    }
+
+    func addPhoto(_ photo: NotePhoto, jpegData: Data, to noteID: UUID) throws {
+        try repository.addPhoto(photo, jpegData: jpegData, to: noteID)
+        reload()
+    }
+
+    func photoData(_ id: UUID) -> Data? {
+        try? repository.photoData(id: id)
+    }
+
+    /// Removes the photo and the line that placed it, so no empty spot is left
+    /// behind in the text.
+    func deletePhoto(_ id: UUID) {
+        write {
+            if var note = notes.first(where: { $0.photos.contains { $0.id == id } }) {
+                let body = PhotoMarkdown.removing(id, from: note.body)
+                if body != note.body {
+                    note.body = body
+                    try repository.save(note)
+                }
+            }
+            try repository.deletePhoto(id: id)
+        }
     }
 
     /// Puts an older body back, keeping the current one as its own revision.
@@ -268,7 +292,8 @@ final class NotesStore {
     /// Keeps the home-screen widgets in step with the library.
     private func publishSnapshot() {
         let stats = LibraryStatistics.make(from: notes)
-        let pinned = notes.first(where: \.isPinned) ?? notes.first
+        let pinned = notes.first(where: \.isPinned)
+        let photoNote = notes.first { !$0.isLocked && !$0.photos.isEmpty }
         let snapshot = WidgetSnapshot(
             date: .now,
             todayCount: stats.todayCount,
@@ -279,9 +304,18 @@ final class NotesStore {
                     id: $0.id,
                     title: $0.title,
                     subtitle: PlainDate.short($0.updatedAt),
-                    isLive: $0.isLive()
+                    isLive: $0.isLive(),
+                    preview: $0.isLocked ? nil : $0.preview,
+                    thumbnail: $0.isLocked ? nil : $0.photos.first?.thumbnail
                 )
-            }
+            },
+            pinnedID: pinned?.id,
+            pinnedPreview: pinned.flatMap { $0.isLocked ? nil : $0.preview },
+            pinnedThumbnail: pinned.flatMap { $0.isLocked ? nil : $0.photos.first?.thumbnail },
+            activeDays: stats.recentDays.map(\.isActive),
+            photoNoteID: photoNote?.id,
+            photoTitle: photoNote?.title,
+            photoThumbnail: photoNote?.photos.first?.thumbnail
         )
         SnapshotStore.shared.write(snapshot)
         WidgetCenter.shared.reloadAllTimelines()

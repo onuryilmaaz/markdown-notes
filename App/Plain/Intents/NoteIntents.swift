@@ -18,7 +18,7 @@ struct NoteAppEntity: AppEntity, Identifiable {
     init(_ note: Note) {
         id = note.id
         title = note.title
-        preview = note.preview
+        preview = note.isLocked ? String(localized: "Locked") : note.preview
     }
 }
 
@@ -29,7 +29,7 @@ struct NoteEntityQuery: EntityStringQuery {
 
     func entities(matching string: String) async throws -> [NoteAppEntity] {
         await IntentLibrary.notes()
-            .filter { $0.matches(string) }
+            .filter { $0.isLocked ? $0.title.localizedCaseInsensitiveContains(string) : $0.matches(string) }
             .prefix(25)
             .map(NoteAppEntity.init)
     }

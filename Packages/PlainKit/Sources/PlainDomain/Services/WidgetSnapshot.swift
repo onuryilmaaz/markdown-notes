@@ -8,12 +8,16 @@ public struct WidgetSnapshot: Codable, Hashable, Sendable {
         public var title: String
         public var subtitle: String
         public var isLive: Bool
+        public var preview: String?
+        public var thumbnail: Data?
 
-        public init(id: UUID, title: String, subtitle: String, isLive: Bool) {
+        public init(id: UUID, title: String, subtitle: String, isLive: Bool, preview: String? = nil, thumbnail: Data? = nil) {
             self.id = id
             self.title = title
             self.subtitle = subtitle
             self.isLive = isLive
+            self.preview = preview
+            self.thumbnail = thumbnail
         }
     }
 
@@ -22,13 +26,33 @@ public struct WidgetSnapshot: Codable, Hashable, Sendable {
     public var pinnedTitle: String?
     public var pinnedSubtitle: String?
     public var recent: [Item]
+    public var pinnedID: UUID?
+    public var pinnedPreview: String?
+    public var pinnedThumbnail: Data?
+    public var activeDays: [Bool]?
+    public var photoNoteID: UUID?
+    public var photoTitle: String?
+    public var photoThumbnail: Data?
 
-    public init(date: Date = .now, todayCount: Int = 0, pinnedTitle: String? = nil, pinnedSubtitle: String? = nil, recent: [Item] = []) {
+    public init(date: Date = .now, todayCount: Int = 0, pinnedTitle: String? = nil, pinnedSubtitle: String? = nil, recent: [Item] = [], pinnedID: UUID? = nil, pinnedPreview: String? = nil, pinnedThumbnail: Data? = nil, activeDays: [Bool]? = nil, photoNoteID: UUID? = nil, photoTitle: String? = nil, photoThumbnail: Data? = nil) {
         self.date = date
         self.todayCount = todayCount
         self.pinnedTitle = pinnedTitle
         self.pinnedSubtitle = pinnedSubtitle
         self.recent = recent
+        self.pinnedID = pinnedID
+        self.pinnedPreview = pinnedPreview
+        self.pinnedThumbnail = pinnedThumbnail
+        self.activeDays = activeDays
+        self.photoNoteID = photoNoteID
+        self.photoTitle = photoTitle
+        self.photoThumbnail = photoThumbnail
+    }
+
+    public static let empty = WidgetSnapshot()
+
+    public static func noteURL(_ id: UUID) -> URL {
+        URL(string: "plain://note?id=\(id.uuidString)")!
     }
 
     public static let placeholder = WidgetSnapshot(

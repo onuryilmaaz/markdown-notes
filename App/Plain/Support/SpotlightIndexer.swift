@@ -11,10 +11,12 @@ enum SpotlightIndexer {
     private static var published: [UUID: Date] = [:]
 
     static func sync(notes: [Note]) {
+        let lockedIDs = Set(notes.filter(\.isLocked).map(\.id))
+        let notes = notes.filter { !$0.isLocked }
         let current = Dictionary(uniqueKeysWithValues: notes.map { ($0.id, $0.updatedAt) })
 
         let changed = notes.filter { published[$0.id] != $0.updatedAt }
-        let removed = published.keys.filter { current[$0] == nil }
+        let removed = Set(published.keys.filter { current[$0] == nil }).union(lockedIDs)
 
         published = current
         if !changed.isEmpty { index(changed) }
@@ -28,7 +30,7 @@ enum SpotlightIndexer {
             attributes.contentDescription = note.preview
             attributes.keywords = note.tags
             attributes.contentModificationDate = note.updatedAt
-            attributes.textContent = note.body
+            attributes.textContent = PhotoMarkdown.strippingPhotos(from: note.body)
 
             let item = CSSearchableItem(
                 uniqueIdentifier: note.id.uuidString,

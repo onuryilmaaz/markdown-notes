@@ -111,7 +111,7 @@ final class NoteAssistant {
             let session = LanguageModelSession(instructions: job.instructions)
             // Long notes are trimmed: the model has a context window and the
             // opening of a note carries its subject.
-            let body = String(note.body.prefix(4_000))
+            let body = String(PhotoMarkdown.strippingPhotos(from: note.body).prefix(4_000))
             let response = try await session.respond(to: "Note:\n\n\(body)")
             return response.content
         }

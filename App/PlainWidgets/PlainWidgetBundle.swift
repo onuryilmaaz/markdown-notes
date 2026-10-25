@@ -7,6 +7,8 @@ struct PlainWidgetBundle: WidgetBundle {
         DayCountWidget()
         PinnedNoteWidget()
         RecentlyLiveWidget()
+        PhotoNoteWidget()
+        QuickNoteWidget()
         LiveNoteActivityWidget()
         NewNoteControl()
         SearchControl()

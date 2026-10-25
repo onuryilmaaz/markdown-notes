@@ -3,7 +3,7 @@ import SwiftData
 import PlainDomain
 
 public enum PlainStore {
-    public static let schema = Schema(versionedSchema: PlainSchemaV1.self)
+    public static let schema = Schema(versionedSchema: PlainSchemaV2.self)
     private static let fileName = "Plain.store"
 
     /// The library lives in the app group so the share extension and the
@@ -45,11 +45,11 @@ public enum PlainStore {
                     cloudKitDatabase: .private(AppGroup.cloudContainer)
                 ))
             }
-            ladder.append(ModelConfiguration(schema: schema, url: shared))
+            ladder.append(ModelConfiguration(schema: schema, url: shared, cloudKitDatabase: .none))
         }
         // No app group (unsigned build): the app's own container still works,
         // extensions simply will not see it.
-        ladder.append(ModelConfiguration(schema: schema))
+        ladder.append(ModelConfiguration(schema: schema, cloudKitDatabase: .none))
         return ladder
     }
 
@@ -103,7 +103,7 @@ public final class SwiftDataNoteRepository: NoteRepository {
             predicate: #Predicate { $0.deletedAt == nil },
             sortBy: [SortDescriptor(\.updatedAt, order: .reverse)]
         )
-        return try context.fetch(descriptor).map(\.domain)
+        return try attachPhotos(to: context.fetch(descriptor))
     }
 
     public func loadDeletedNotes() throws -> [Note] {
@@ -111,7 +111,7 @@ public final class SwiftDataNoteRepository: NoteRepository {
             predicate: #Predicate { $0.deletedAt != nil },
             sortBy: [SortDescriptor(\.deletedAt, order: .reverse)]
         )
-        return try context.fetch(descriptor).map(\.domain)
+        return try attachPhotos(to: context.fetch(descriptor))
     }
 
     // MARK: Folders
@@ -179,6 +179,29 @@ public final class SwiftDataNoteRepository: NoteRepository {
         try context.save()
     }
 
+    public func addPhoto(_ photo: NotePhoto, jpegData: Data, to noteID: UUID) throws {
+        guard let note = try noteEntity(noteID), note.deletedAt == nil else { throw CocoaError(.fileNoSuchFile) }
+        let existing = try photos(for: noteID)
+        guard !existing.contains(where: { $0.id == photo.id }) else { return }
+        context.insert(PhotoEntity(photo: photo, jpegData: jpegData, noteID: noteID, sortIndex: (existing.map(\.sortIndex).max() ?? -1) + 1))
+        note.updatedAt = .now
+        try context.save()
+    }
+
+    public func photoData(id: UUID) throws -> Data? {
+        let descriptor = FetchDescriptor<PhotoEntity>(predicate: #Predicate { $0.id == id })
+        return try context.fetch(descriptor).first?.jpegData
+    }
+
+    public func deletePhoto(id: UUID) throws {
+        let descriptor = FetchDescriptor<PhotoEntity>(predicate: #Predicate { $0.id == id })
+        for photo in try context.fetch(descriptor) {
+            try noteEntity(photo.noteID)?.updatedAt = .now
+            context.delete(photo)
+        }
+        try context.save()
+    }
+
     public func restore(noteIDs: Set<UUID>) throws {
         for id in noteIDs {
             guard let entity = try noteEntity(id) else { continue }
@@ -190,6 +213,7 @@ public final class SwiftDataNoteRepository: NoteRepository {
     public func purge(noteIDs: Set<UUID>) throws {
         for id in noteIDs {
             if let entity = try noteEntity(id) { context.delete(entity) }
+            try deletePhotos(for: id)
             try deleteRevisions(for: id)
         }
         try context.save()
@@ -202,7 +226,11 @@ public final class SwiftDataNoteRepository: NoteRepository {
                 if let deletedAt = entity.deletedAt { return deletedAt < date } else { return false }
             }
         )
-        for entity in try context.fetch(descriptor) { context.delete(entity) }
+        for entity in try context.fetch(descriptor) {
+            try deleteRevisions(for: entity.id)
+            try deletePhotos(for: entity.id)
+            context.delete(entity)
+        }
         try context.save()
     }
 
@@ -210,6 +238,7 @@ public final class SwiftDataNoteRepository: NoteRepository {
         try context.delete(model: NoteEntity.self)
         try context.delete(model: FolderEntity.self)
         try context.delete(model: RevisionEntity.self)
+        try context.delete(model: PhotoEntity.self)
         try context.save()
     }
 
@@ -247,6 +276,25 @@ public final class SwiftDataNoteRepository: NoteRepository {
     }
 
     // MARK: Lookups
+
+    private func attachPhotos(to entities: [NoteEntity]) throws -> [Note] {
+        let descriptors = FetchDescriptor<PhotoEntity>(sortBy: [SortDescriptor(\.sortIndex)])
+        let byNote = Dictionary(grouping: try context.fetch(descriptors), by: \.noteID)
+        return entities.map { entity in
+            var note = entity.domain
+            note.photos = (byNote[entity.id] ?? []).map(\.domain)
+            return note
+        }
+    }
+
+    private func photos(for noteID: UUID) throws -> [PhotoEntity] {
+        let descriptor = FetchDescriptor<PhotoEntity>(predicate: #Predicate { $0.noteID == noteID })
+        return try context.fetch(descriptor)
+    }
+
+    private func deletePhotos(for noteID: UUID) throws {
+        for photo in try photos(for: noteID) { context.delete(photo) }
+    }
 
     private func folderEntity(_ id: UUID) throws -> FolderEntity? {
         var descriptor = FetchDescriptor<FolderEntity>(predicate: #Predicate { $0.id == id })

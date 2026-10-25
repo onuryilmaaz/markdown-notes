@@ -4,6 +4,7 @@ import PlainDomain
 /// Everything that can point at this app from outside: the `plain://` scheme,
 /// a Spotlight result, a widget tap, a Shortcuts action.
 enum DeepLink: Equatable {
+    case home
     case newNote(text: String?)
     case note(UUID)
     case noteTitled(String)
@@ -29,6 +30,7 @@ enum DeepLink: Equatable {
         let action = (url.host ?? url.pathComponents.first { $0 != "/" } ?? "").lowercased()
 
         switch action {
+        case "home": self = .home
         case "new", "create":
             self = .newNote(text: value("text") ?? value("body"))
         case "note", "open":

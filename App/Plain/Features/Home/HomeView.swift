@@ -18,8 +18,21 @@ struct HomeView: View {
                             WeekCard(statistics: store.statistics)
                         }
                         .fixedSize(horizontal: false, vertical: true)
+                        .plainEntrance()
 
-                        folderCard
+                        if let recent = store.notes.first {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text("Pick up where you left off")
+                                    .font(PlainFont.label).foregroundStyle(PlainPalette.inkSecondary)
+                                    .padding(.horizontal, 4)
+                                NoteCard(note: recent, folderName: store.folderName(recent.folderID), showsCover: true) {
+                                    router.push(.note(recent.id))
+                                }
+                            }
+                            .plainEntrance(delay: 0.06)
+                        }
+
+                        folderCard.plainEntrance(delay: 0.12)
                         if store.isEmpty {
                             EmptyStateCard(
                                 glyph: "#",
@@ -42,12 +55,14 @@ struct HomeView: View {
                     .keyboardShortcut("n", modifiers: .command)
                 .padding(.horizontal, 30)
                 .padding(.bottom, 8)
+                .sensoryFeedback(.impact(weight: .light), trigger: store.notes.count)
             }
         }
     }
 
     private var header: some View {
         ScreenHeader(title: "All Notes", backIcon: "magnifyingglass", backLabel: "Search", onBack: { router.push(.search) }) {
+            CircleIconButton("square.grid.2x2", label: "Widgets", size: 38) { router.present(.widgets) }
             CircleIconButton("asterisk", label: "Settings", size: 38) { router.push(.settings) }
         }
     }

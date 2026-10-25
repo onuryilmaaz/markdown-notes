@@ -15,15 +15,15 @@ enum LibraryExchange {
 
     /// A single note as a `.md` file in a fresh temporary directory, so two
     /// exports never collide over a file name.
-    static func markdownFile(for note: Note) throws -> URL {
+    static func markdownFile(for note: Note, photoData: (UUID) -> Data? = { _ in nil }) throws -> URL {
         let directory = try scratchDirectory()
         let url = directory.appendingPathComponent(NoteExchange.fileName(for: note))
-        try NoteExchange.markdown(for: note).write(to: url, atomically: true, encoding: .utf8)
-        return url
+        try write(note, named: url.lastPathComponent, to: directory, photoData: photoData)
+        return note.photos.isEmpty ? url : try zip(directory)
     }
 
     /// The whole library, foldered exactly as it is in the app.
-    static func archive(notes: [Note], folderName: (UUID?) -> String) throws -> URL {
+    static func archive(notes: [Note], folderName: (UUID?) -> String, photoData: (UUID) -> Data? = { _ in nil }) throws -> URL {
         let staging = try scratchDirectory().appendingPathComponent("Plain Library", isDirectory: true)
         try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
 
@@ -33,12 +33,24 @@ enum LibraryExchange {
             let directory = staging.appendingPathComponent(safe(folder), isDirectory: true)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
-            let name = NoteExchange.fileName(for: note, existing: used[folder] ?? [])
-            used[folder, default: []].insert(name.lowercased())
-            try NoteExchange.markdown(for: note)
-                .write(to: directory.appendingPathComponent(name), atomically: true, encoding: .utf8)
+            // Distinct names such as A/B and A:B can sanitize to the same
+            // directory. Track the actual destination to preserve both notes.
+            let destination = directory.standardizedFileURL.path.precomposedStringWithCanonicalMapping.lowercased()
+            let name = NoteExchange.fileName(for: note, existing: used[destination] ?? [])
+            used[destination, default: []].insert(name.lowercased())
+            try write(note, named: name, to: directory, photoData: photoData)
         }
         return try zip(staging)
+    }
+
+    private static func write(_ note: Note, named name: String, to directory: URL, photoData: (UUID) -> Data?) throws {
+        for photo in note.photos {
+            guard let data = photoData(photo.id) else { throw CocoaError(.fileReadNoSuchFile) }
+            let url = directory.appendingPathComponent(NoteExchange.photoPath(photo, in: note.id))
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try data.write(to: url, options: .atomic)
+        }
+        try NoteExchange.markdown(for: note).write(to: directory.appendingPathComponent(name), atomically: true, encoding: .utf8)
     }
 
     /// `NSFileCoordinator` will hand back a zip of a directory; the copy has to
@@ -81,46 +93,83 @@ enum LibraryExchange {
     private static func safe(_ name: String) -> String {
         let cleaned = name.components(separatedBy: CharacterSet(charactersIn: "/\\:?%*|\"<>")).joined(separator: " ")
         let trimmed = cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? "Notes" : trimmed
+        return trimmed.isEmpty || trimmed == "." || trimmed == ".." ? "Notes" : trimmed
     }
 }
 
-/// Paginated PDF of a note's reading view — the same layout people see, cut
-/// into pages instead of one endless strip.
+/// Paginated PDF of a note's reading view — the same layout people see. Each
+/// block is drawn on its own and moved to the next page whole when it does not
+/// fit, so a photo or a line of text is never cut in two at a page edge.
 @MainActor
 enum NotePDF {
     static let pageSize = CGSize(width: 595, height: 842)   // A4 at 72dpi
     private static let margin: CGFloat = 48
+    /// The reading view's own gap between blocks.
+    private static let blockSpacing: CGFloat = 14
 
-    static func file(for note: Note, bodySize: CGFloat) throws -> URL {
+    static func file(for note: Note, bodySize: CGFloat, photoData: @escaping (UUID) -> Data? = { _ in nil }) throws -> URL {
         let contentWidth = pageSize.width - margin * 2
-        let renderer = ImageRenderer(
-            content: MarkdownRenderedView(document: MarkdownDocument(parsing: note.body), bodySize: bodySize)
+        let contentHeight = pageSize.height - margin * 2
+
+        let blocks = try MarkdownDocument(parsing: note.body).blocks.map { block -> UIImage in
+            let renderer = ImageRenderer(
+                content: MarkdownRenderedView(
+                    document: MarkdownDocument(blocks: [block]),
+                    bodySize: bodySize,
+                    photos: note.photos,
+                    photoData: photoData
+                )
                 .frame(width: contentWidth, alignment: .leading)
                 .padding(.vertical, 2)
                 .environment(\.colorScheme, .light)
-        )
-        renderer.scale = 2
-
-        guard let image = renderer.uiImage else { throw CocoaError(.fileWriteUnknown) }
+            )
+            renderer.scale = 2
+            guard let image = renderer.uiImage else { throw CocoaError(.fileWriteUnknown) }
+            return image
+        }
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("\((note.title as NSString).deletingPathExtension).pdf")
+            .appendingPathComponent("\((NoteExchange.fileName(for: note) as NSString).deletingPathExtension).pdf")
 
-        let contentHeight = pageSize.height - margin * 2
-        let pages = max(Int(ceil(image.size.height / contentHeight)), 1)
+        // Photos the text does not place still get a page each at the end.
+        let photoBytes = try note.unplacedPhotos.map { photo -> Data in
+            guard let data = photoData(photo.id), UIImage(data: data) != nil else { throw CocoaError(.fileReadCorruptFile) }
+            return data
+        }
 
         try UIGraphicsPDFRenderer(bounds: CGRect(origin: .zero, size: pageSize)).writePDF(to: url) { context in
-            for page in 0..<pages {
+            var y: CGFloat = 0
+            func newPage() {
                 context.beginPage()
-                let offset = CGFloat(page) * contentHeight
                 UIColor.white.setFill()
                 context.fill(CGRect(origin: .zero, size: pageSize))
-                // Clip to the printable area, then slide the full-height image
-                // up so this page shows its own slice.
-                context.cgContext.saveGState()
-                context.cgContext.clip(to: CGRect(x: margin, y: margin, width: contentWidth, height: contentHeight))
-                image.draw(in: CGRect(x: margin, y: margin - offset, width: image.size.width, height: image.size.height))
-                context.cgContext.restoreGState()
+                y = 0
+            }
+            newPage()
+            for image in blocks where image.size.height > 0 {
+                if y > 0, y + image.size.height > contentHeight { newPage() }
+                // Only a block taller than a whole page is sliced across pages.
+                var shown: CGFloat = 0
+                while true {
+                    let slice = min(image.size.height - shown, contentHeight - y)
+                    context.cgContext.saveGState()
+                    context.cgContext.clip(to: CGRect(x: margin, y: margin + y, width: contentWidth, height: slice))
+                    image.draw(in: CGRect(x: margin, y: margin + y - shown, width: image.size.width, height: image.size.height))
+                    context.cgContext.restoreGState()
+                    shown += slice
+                    y += slice
+                    if shown >= image.size.height - 0.5 { break }
+                    newPage()
+                }
+                y += blockSpacing
+            }
+            for data in photoBytes {
+                autoreleasepool {
+                    guard let photo = UIImage(data: data) else { return }
+                    newPage()
+                    let scale = min(contentWidth / photo.size.width, contentHeight / photo.size.height)
+                    let size = CGSize(width: photo.size.width * scale, height: photo.size.height * scale)
+                    photo.draw(in: CGRect(x: (pageSize.width - size.width) / 2, y: (pageSize.height - size.height) / 2, width: size.width, height: size.height))
+                }
             }
         }
         return url

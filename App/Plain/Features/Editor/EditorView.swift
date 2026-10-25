@@ -1,6 +1,7 @@
 import SwiftUI
 import PlainDomain
 import PlainDesignSystem
+import PhotosUI
 
 /// How the editing screen is split between writing and reading.
 enum EditorMode: String, CaseIterable, Identifiable {
@@ -24,29 +25,53 @@ struct EditorView: View {
     @Environment(NotesStore.self) private var store
     @Environment(Router.self) private var router
     @Environment(AppSettings.self) private var settings
+    @Environment(PurchaseStore.self) private var purchases
 
     @State private var text: String = ""
     @State private var mode: EditorMode = .write
     @State private var controller = EditorController()
     @State private var saveTask: Task<Void, Never>?
+    @State private var photoSelection: [PhotosPickerItem] = []
+    @State private var isImportingPhotos = false
+    @State private var photoImportFailed = false
+    @State private var importedPhotoCount = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        @Bindable var settings = settings
-
         PlainScreen {
             VStack(spacing: 12) {
-                Text("Mononote")
-                    .font(PlainFont.headline)
-                    .foregroundStyle(PlainPalette.ink)
-                    .padding(.top, 10)
+                HStack {
+                    Text("Plain").font(PlainFont.headline)
+                    Spacer()
+                    if isImportingPhotos { ProgressView() }
+                    PhotosPicker(selection: $photoSelection, maxSelectionCount: 5, matching: .images) {
+                        Label("Add photos", systemImage: "photo.badge.plus")
+                            .font(PlainFont.label)
+                            .padding(.horizontal, 14).padding(.vertical, 10)
+                            .background(PlainPalette.surface, in: .capsule)
+                    }
+                    .disabled(isImportingPhotos)
+                    .accessibilityIdentifier("add-photos")
+                }
+                .foregroundStyle(PlainPalette.ink)
+                .padding(.horizontal, Metrics.Space.gutter)
+                .padding(.top, 6)
 
                 ShortcutBar(
                     controller: controller,
                     mode: $mode,
-                    focusMode: $settings.focusMode,
-                    typewriterMode: $settings.typewriterMode
+                    focusMode: proPreference(\.focusMode),
+                    typewriterMode: proPreference(\.typewriterMode)
                 )
                 .padding(.horizontal, Metrics.Space.gutter)
+
+                // Photos already in the text are drawn there; the rest wait
+                // here until they are tapped into place.
+                if !unplacedPhotos.isEmpty {
+                    NotePhotoGallery(photos: unplacedPhotos, editable: true, onPlace: { controller.insertPhoto($0) })
+                        .padding(.horizontal, Metrics.Space.gutter)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
 
                 content
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -60,6 +85,10 @@ struct EditorView: View {
         }
         .onAppear {
             text = store.note(noteID)?.body ?? ""
+            controller.onDeletePhoto = { id in
+                persist(immediately: true)
+                store.deletePhoto(id)
+            }
             #if DEBUG
             if let requested = ProcessInfo.processInfo.environment["PLAIN_EDITOR_MODE"],
                let parsed = EditorMode(rawValue: requested) {
@@ -69,6 +98,39 @@ struct EditorView: View {
         }
         .onChange(of: text) { _, _ in persist(immediately: false) }
         .onDisappear { persist(immediately: true) }
+        .task(id: photoSelection) {
+            guard !photoSelection.isEmpty else { return }
+            isImportingPhotos = true
+            defer { isImportingPhotos = false }
+            persist(immediately: true)
+            for item in photoSelection {
+                do {
+                    let prepared = try await PhotoImport.prepare(item)
+                    try Task.checkCancellation()
+                    try store.addPhoto(prepared.photo, jpegData: prepared.jpeg, to: noteID)
+                    controller.insertPhoto(prepared.photo)
+                    importedPhotoCount += 1
+                } catch is CancellationError { return }
+                catch { photoImportFailed = true }
+            }
+            photoSelection = []
+        }
+        .sensoryFeedback(.success, trigger: importedPhotoCount)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.3), value: unplacedPhotos.map(\.id))
+        .alert("Some photos could not be added", isPresented: $photoImportFailed) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Check that the photo is downloaded and there is free space on your device.")
+        }
+    }
+
+    private var photos: [NotePhoto] { store.note(noteID)?.photos ?? [] }
+
+    /// Read from the text being edited, which runs ahead of the saved body.
+    private var unplacedPhotos: [NotePhoto] {
+        guard !photos.isEmpty else { return [] }
+        let placed = Set(PhotoMarkdown.placedIDs(in: text))
+        return photos.filter { !placed.contains($0.id) }
     }
 
     @ViewBuilder
@@ -93,15 +155,17 @@ struct EditorView: View {
             text: $text,
             isMonospaced: settings.monospaceEditor,
             fontSize: settings.textSize,
-            isFocusMode: settings.focusMode,
-            isTypewriter: settings.typewriterMode,
+            isFocusMode: purchases.hasPro && settings.focusMode,
+            isTypewriter: purchases.hasPro && settings.typewriterMode,
+            photos: photos,
+            photoData: store.photoData,
             controller: controller
         )
     }
 
     private var preview: some View {
         ScrollView {
-            MarkdownRenderedView(document: MarkdownDocument(parsing: text), bodySize: settings.textSize - 1)
+            MarkdownRenderedView(document: MarkdownDocument(parsing: text), bodySize: settings.textSize - 1, photos: photos, photoData: store.photoData)
                 .padding(18)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -114,19 +178,35 @@ struct EditorView: View {
         router.pop()
     }
 
+    private func proPreference(_ keyPath: ReferenceWritableKeyPath<AppSettings, Bool>) -> Binding<Bool> {
+        Binding(
+            get: { purchases.hasPro && settings[keyPath: keyPath] },
+            set: { enabled in
+                if enabled && !purchases.hasPro {
+                    router.present(.pro(.writing))
+                } else {
+                    settings[keyPath: keyPath] = enabled
+                }
+            }
+        )
+    }
+
     /// Debounced autosave; `Done` and leaving the screen flush it.
     private func persist(immediately: Bool) {
         saveTask?.cancel()
-        guard var note = store.note(noteID) else { return }
-        note.body = text
+        let body = text
 
         if immediately {
+            guard var note = store.note(noteID) else { return }
+            note.body = body
             store.update(note)
             return
         }
         saveTask = Task {
             try? await Task.sleep(for: .milliseconds(700))
             guard !Task.isCancelled else { return }
+            guard var note = store.note(noteID) else { return }
+            note.body = body
             store.update(note)
         }
     }

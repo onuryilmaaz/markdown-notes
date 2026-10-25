@@ -24,6 +24,7 @@ struct TodayCard: View {
                 .font(PlainFont.counter)
                 .foregroundStyle(PlainPalette.ink)
                 .padding(.top, 6)
+                .contentTransition(.numericText())
             Spacer(minLength: 6)
             Text("^[\(statistics.todayCount) note](inflect: true) written")
                 .font(PlainFont.meta)
@@ -58,6 +59,7 @@ struct WeekCard: View {
             // The dots are a picture of the number above them.
             ActivityDots(states: statistics.recentDays.map(\.isActive))
                 .accessibilityHidden(true)
+                .plainEntrance(delay: 0.18)
             Spacer(minLength: 2)
         }
         .padding(Metrics.Space.card)

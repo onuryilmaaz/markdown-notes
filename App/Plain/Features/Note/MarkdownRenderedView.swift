@@ -10,6 +10,13 @@ struct MarkdownRenderedView: View {
     /// Set by the reading screen so a tapped box edits the note. Left nil when
     /// the view is only being drawn (PDF export, previews).
     var onToggleTask: ((Int) -> Void)?
+    /// Photos the body can place. A line pointing at any other photo draws
+    /// nothing, so a removed photo leaves no hole.
+    var photos: [NotePhoto] = []
+    var photoData: (UUID) -> Data? = { _ in nil }
+    /// Set where a tapped photo should open full screen.
+    var onOpenPhoto: ((NotePhoto) -> Void)?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -115,14 +122,39 @@ struct MarkdownRenderedView: View {
         case .table(let header, let rows):
             TableBlock(header: header, rows: rows, bodySize: bodySize)
 
+        case .photo(let id):
+            if let photo = photos.first(where: { $0.id == id }) {
+                if let onOpenPhoto {
+                    Button { onOpenPhoto(photo) } label: { inlinePhoto(photo) }
+                        .buttonStyle(PressableButtonStyle())
+                        .accessibilityLabel("Open photo")
+                        .accessibilityIdentifier("inline-photo-\(photo.id)")
+                } else {
+                    inlinePhoto(photo)
+                }
+            }
+
         case .divider:
             PlainDivider(inset: 0)
         }
     }
 
+    private func inlinePhoto(_ photo: NotePhoto) -> some View {
+        Color.clear
+            .aspectRatio(PhotoCache.displayAspect(of: photo), contentMode: .fit)
+            .frame(maxWidth: .infinity)
+            .overlay {
+                if let image = PhotoCache.shared.image(for: photo, data: photoData) {
+                    Image(uiImage: image).resizable().scaledToFill()
+                }
+            }
+            .clipShape(.rect(cornerRadius: Metrics.Radius.inner, style: .continuous))
+    }
+
     private func taskRow(_ item: TaskItem) -> some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: item.isDone ? "checkmark.square.fill" : "square")
+                .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
                 .font(.system(size: bodySize, weight: .medium))
                 .foregroundStyle(item.isDone ? PlainPalette.ink : PlainPalette.inkTertiary)
                 .frame(width: bodySize + 2)
@@ -132,6 +164,7 @@ struct MarkdownRenderedView: View {
             Spacer(minLength: 0)
         }
         .contentShape(.rect)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: item.isDone)
     }
 
     private func headingFont(_ level: Int) -> Font {

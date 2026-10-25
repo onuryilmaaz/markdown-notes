@@ -131,6 +131,37 @@ targets:
         GENERATE_INFOPLIST_FILE: true
         TEST_TARGET_NAME: Plain
 
+  PlainCommerceTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - Tests/PlainCommerceTests
+      - path: Configuration/Plain.storekit
+        buildPhase: resources
+    dependencies:
+      - target: Plain
+      - sdk: StoreKitTest.framework
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: true
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Plain.app/Plain"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+
+  PlainAppTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - Tests/PlainAppTests
+    dependencies:
+      - target: Plain
+      - package: PlainKit
+        product: PlainDomain
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: true
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Plain.app/Plain"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+
 schemes:
   Plain:
     build:
@@ -144,9 +175,25 @@ schemes:
       targets:
         - PlainTests
         - PlainUITests
+        - PlainAppTests
     profile:
       config: Release
     analyze:
       config: Debug
     archive:
       config: Release
+
+  Plain-StoreKit:
+    build:
+      targets:
+        Plain: all
+    run:
+      config: Debug
+      storeKitConfiguration: Configuration/Plain.storekit
+      environmentVariables:
+        PLAIN_ROUTE: pro
+    test:
+      config: Debug
+      testPlans:
+        - path: Configuration/Commerce.xctestplan
+          defaultPlan: true

@@ -8,11 +8,30 @@ public enum NoteExchange {
     /// The note as it should land on disk — the body, with a heading added only
     /// when the body does not already open with one.
     public static func markdown(for note: Note) -> String {
-        let body = note.body.trimmingCharacters(in: .whitespacesAndNewlines)
+        let body = exportingPhotoLines(of: note).trimmingCharacters(in: .whitespacesAndNewlines)
+        let text: String
         if MarkdownText.firstHeading(in: body) != nil || body.isEmpty {
-            return body.isEmpty ? "# \(note.title)\n" : body + "\n"
+            text = body.isEmpty ? "# \(note.title)\n" : body + "\n"
+        } else {
+            text = "# \(note.title)\n\n\(body)\n"
         }
-        return "# \(note.title)\n\n\(body)\n"
+        // Photos the body does not place go at the end, as before.
+        return text + note.unplacedPhotos.map { "\n![Photo](\(photoPath($0, in: note.id)))\n" }.joined()
+    }
+
+    /// Placed photos point at the exported file instead of the app's own id.
+    private static func exportingPhotoLines(of note: Note) -> String {
+        let photos = Dictionary(note.photos.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return note.body.components(separatedBy: "\n").map { line in
+            guard let id = PhotoMarkdown.id(inLine: line) else { return line }
+            guard let photo = photos[id] else { return "" }
+            return "![Photo](\(photoPath(photo, in: note.id)))"
+        }
+        .joined(separator: "\n")
+    }
+
+    public static func photoPath(_ photo: NotePhoto, in noteID: UUID) -> String {
+        "attachments/\(noteID.uuidString)/\(photo.fileName)"
     }
 
     /// A file name that survives every file system: no slashes, no colons, not

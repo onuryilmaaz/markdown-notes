@@ -7,7 +7,10 @@ struct RootView: View {
     @Environment(Router.self) private var router
     @Environment(NotesStore.self) private var store
     @Environment(LockSession.self) private var locks
+    @Environment(PurchaseStore.self) private var purchases
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Namespace private var noteTransition
 
     private let pending = PendingLink.shared
 
@@ -20,6 +23,7 @@ struct RootView: View {
                     destination(for: route)
                 }
         }
+        .environment(\.noteTransitionNamespace, noteTransition)
         .sheet(item: $router.sheet) { sheet in
             sheetContent(for: sheet)
         }
@@ -39,7 +43,10 @@ struct RootView: View {
         .onChange(of: scenePhase) { _, phase in
             // An extension or a Shortcuts action may have written while the app
             // was in the background.
-            if phase == .active { store.reload() }
+            if phase == .active {
+                store.reload()
+                Task { await purchases.refreshEntitlements() }
+            }
             // Leaving the app re-locks every note that was opened with Face ID.
             if phase == .background { locks.lockAll() }
         }
@@ -50,6 +57,8 @@ struct RootView: View {
     private func follow(_ link: DeepLink) {
         router.sheet = nil
         switch link {
+        case .home:
+            router.path = []
         case .newNote(let text):
             let note = text.flatMap { NoteExchange.note(fromPastedText: $0) }
             if let note {
@@ -59,8 +68,9 @@ struct RootView: View {
                 router.path = [.editor(store.createNote(in: nil).id)]
             }
         case .note(let id):
-            guard store.note(id) != nil else { return }
-            router.path = [.note(id)]
+            // A widget can outlive its note; land on the library rather than
+            // leaving whatever screen happened to be open.
+            router.path = store.note(id) != nil ? [.note(id)] : []
         case .noteTitled(let title):
             if let existing = store.note(titled: title) {
                 router.path = [.note(existing.id)]
@@ -79,20 +89,35 @@ struct RootView: View {
     private func destination(for route: Route) -> some View {
         switch route {
         case .list(let scope): NoteListView(scope: scope)
-        case .note(let id): NoteDetailView(noteID: id)
-        case .editor(let id): EditorView(noteID: id)
+        case .note(let id):
+            if reduceMotion {
+                NoteDetailView(noteID: id)
+            } else {
+                NoteDetailView(noteID: id)
+                    .navigationTransition(.zoom(sourceID: id, in: noteTransition))
+            }
+        case .editor(let id): NoteAccessView(noteID: id) { EditorView(noteID: id) }
         case .live(let id): LiveNoteView(noteID: id)
         case .search: SearchView()
         case .tags: TagsView()
         case .settings: SettingsView()
         case .trash: TrashView()
-        case .history(let id): HistoryView(noteID: id)
+        case .history(let id):
+            NoteAccessView(noteID: id) {
+                ProAccessView(feature: .history) { HistoryView(noteID: id) }
+            }
         }
     }
 
     @ViewBuilder
     private func sheetContent(for sheet: AppSheet) -> some View {
         switch sheet {
+        case .pro(let feature):
+            ProView(feature: feature)
+        case .privacy:
+            PrivacyView()
+        case .widgets:
+            WidgetGalleryView()
         case .newFolder:
             NameSheet(title: "New folder", placeholder: "Folder name", mode: .create)
                 .presentationDetents([.height(230)])
@@ -100,7 +125,13 @@ struct RootView: View {
                 .presentationBackground(PlainPalette.ground)
         case .assist(let id, let job):
             if let note = store.note(id) {
-                AssistSheet(note: note, job: job.kind)
+                NoteAccessView(noteID: id) {
+                    if purchases.hasPro {
+                        AssistSheet(note: note, job: job.kind)
+                    } else {
+                        ProView(feature: .assistant)
+                    }
+                }
                     .presentationDetents([.height(380)])
                     .presentationCornerRadius(Metrics.Radius.sheet)
                     .presentationBackground(PlainPalette.ground)

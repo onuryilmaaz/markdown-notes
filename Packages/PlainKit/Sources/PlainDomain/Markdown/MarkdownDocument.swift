@@ -11,6 +11,7 @@ public enum MarkdownBlock: Hashable, Identifiable, Sendable {
     case ordered([String])
     case code(String, language: String?)
     case table(header: [String], rows: [[String]])
+    case photo(UUID)
     case divider
 
     public var id: Int { hashValue }
@@ -116,6 +117,11 @@ public struct MarkdownDocument: Hashable, Sendable {
 
             if line.isEmpty {
                 flushAll()
+                continue
+            }
+            if let photo = PhotoMarkdown.id(inLine: line) {
+                flushAll()
+                blocks.append(.photo(photo))
                 continue
             }
             if line == "---" || line == "***" {

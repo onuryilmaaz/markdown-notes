@@ -54,7 +54,7 @@ public enum SearchEngine {
 
     static func snippet(for query: String, in note: Note) -> String {
         // The title is already above the snippet — start from the prose.
-        let body = note.body
+        let body = PhotoMarkdown.strippingPhotos(from: note.body)
             .components(separatedBy: .newlines)
             .drop { line in
                 let trimmed = line.trimmingCharacters(in: .whitespaces)

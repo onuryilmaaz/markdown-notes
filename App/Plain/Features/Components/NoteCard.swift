@@ -8,12 +8,24 @@ struct NoteCard: View {
     var folderName: String?
     var isSelected: Bool = false
     var showsSelection: Bool = false
+    var showsCover = false
     var action: () -> Void
 
     private var isLive: Bool { note.isLive() }
 
     var body: some View {
         Button(action: action) {
+            VStack(spacing: 0) {
+                if showsCover, !note.isLocked, let photo = note.photos.first,
+                   let image = UIImage(data: photo.thumbnail) {
+                    Image(uiImage: image).resizable().scaledToFill()
+                        .frame(height: 170).clipped()
+                        .overlay(alignment: .bottomTrailing) {
+                            Label("\(note.photos.count)", systemImage: "photo.on.rectangle")
+                                .font(PlainFont.meta).foregroundStyle(.white)
+                                .padding(10).background(.black.opacity(0.4), in: .capsule).padding(12)
+                        }
+                }
             HStack(alignment: .top, spacing: 12) {
                 if showsSelection {
                     Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
@@ -54,6 +66,13 @@ struct NoteCard: View {
                 }
                 Spacer(minLength: 0)
 
+                if !showsCover, !note.isLocked, let photo = note.photos.first,
+                   let image = UIImage(data: photo.thumbnail) {
+                    Image(uiImage: image).resizable().scaledToFill()
+                        .frame(width: 72, height: 78).clipped()
+                        .clipShape(.rect(cornerRadius: 16))
+                }
+
                 if note.isPinned, !showsSelection {
                     Image(systemName: "pin.fill")
                         .font(.system(size: 11))
@@ -62,9 +81,12 @@ struct NoteCard: View {
             }
             .padding(Metrics.Space.card)
             .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .clipShape(.rect(cornerRadius: Metrics.Radius.card))
             .plainCard(background: isLive ? PlainPalette.emphasis : PlainPalette.surface)
         }
         .buttonStyle(PressableButtonStyle())
+        .modifier(NoteTransitionSource(id: note.id))
         // A card is one thing to a reader; it should be one thing to VoiceOver.
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(verbatim: note.title))

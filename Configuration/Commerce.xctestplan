@@ -1,0 +1,30 @@
+{
+  "configurations": [
+    {
+      "id": "EF20EC9B-DA06-45C4-B643-48B3430490A1",
+      "name": "StoreKit",
+      "options": {}
+    }
+  ],
+  "defaultOptions": {
+    "storeKitConfigurationFile": {
+      "identifier": "container:Configuration/Plain.storekit"
+    },
+    "targetForVariableExpansion": {
+      "containerPath": "container:Plain.xcodeproj",
+      "identifier": "4B32C1CDDD0A4D2F137F5F2A",
+      "name": "Plain"
+    }
+  },
+  "testTargets": [
+    {
+      "parallelizable": false,
+      "target": {
+        "containerPath": "container:Plain.xcodeproj",
+        "identifier": "F893ABC25B079E6567A94273",
+        "name": "PlainCommerceTests"
+      }
+    }
+  ],
+  "version": 1
+}

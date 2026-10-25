@@ -114,19 +114,55 @@ public enum PlainSchemaV1: VersionedSchema {
     }
 }
 
-// The shape the app is written against today. A version 2 would change these
-// three lines and nothing else.
+// Photo support reuses the unchanged version 1 note/folder/revision shapes.
 public typealias FolderEntity = PlainSchemaV1.FolderEntity
 public typealias NoteEntity = PlainSchemaV1.NoteEntity
 public typealias RevisionEntity = PlainSchemaV1.RevisionEntity
 
+/// Version 1 entities stay unchanged; version 2 adds independent photo records.
+/// Keeping the binary outside the note avoids rewriting it on every keystroke.
+public enum PlainSchemaV2: VersionedSchema {
+    public static var versionIdentifier: Schema.Version { Schema.Version(2, 0, 0) }
+    public static var models: [any PersistentModel.Type] {
+        PlainSchemaV1.models + [PhotoEntity.self]
+    }
+
+    @Model
+    public final class PhotoEntity {
+        public var id: UUID = UUID()
+        public var noteID: UUID = UUID()
+        public var thumbnail: Data = Data()
+        @Attribute(.externalStorage) public var jpegData: Data = Data()
+        public var pixelWidth: Int = 0
+        public var pixelHeight: Int = 0
+        public var createdAt: Date = Date.now
+        public var sortIndex: Int = 0
+
+        public init(photo: NotePhoto, jpegData: Data, noteID: UUID, sortIndex: Int) {
+            id = photo.id
+            self.noteID = noteID
+            thumbnail = photo.thumbnail
+            self.jpegData = jpegData
+            pixelWidth = photo.pixelWidth
+            pixelHeight = photo.pixelHeight
+            createdAt = photo.createdAt
+            self.sortIndex = sortIndex
+        }
+
+        var domain: NotePhoto {
+            NotePhoto(id: id, thumbnail: thumbnail, pixelWidth: pixelWidth, pixelHeight: pixelHeight, createdAt: createdAt)
+        }
+    }
+}
+
+public typealias PhotoEntity = PlainSchemaV2.PhotoEntity
+
 /// How the store gets from one version to the next.
 ///
-/// There is one version so far and therefore no stage to run — but the plan is
-/// registered with the container now, while the library on people's phones is
-/// still small enough to be forgiving. A plan added after the fact cannot
-/// rescue a store that has already been guessed at.
+/// Version 2 adds photo records without changing existing note entities.
 public enum PlainMigrationPlan: SchemaMigrationPlan {
-    public static var schemas: [any VersionedSchema.Type] { [PlainSchemaV1.self] }
-    public static var stages: [MigrationStage] { [] }
+    public static var schemas: [any VersionedSchema.Type] { [PlainSchemaV1.self, PlainSchemaV2.self] }
+    public static var stages: [MigrationStage] {
+        [.lightweight(fromVersion: PlainSchemaV1.self, toVersion: PlainSchemaV2.self)]
+    }
 }
