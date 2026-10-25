@@ -1,0 +1,59 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "Cancel" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vazgeç"
+          }
+        }
+      }
+    },
+    "Nothing to save from here." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buradan kaydedilecek bir şey yok."
+          }
+        }
+      }
+    },
+    "Save note" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notu kaydet"
+          }
+        }
+      }
+    },
+    "Save to Plain" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plain'e kaydet"
+          }
+        }
+      }
+    },
+    "Saved" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kaydedildi"
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

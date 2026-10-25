@@ -1,0 +1,61 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "%lldh %lldm" : {
+      "localizations" : {
+        "tr" : { "stringUnit" : { "state" : "translated", "value" : "%1$lld sa %2$lld dk" } }
+      }
+    },
+    "%lldh left" : {
+      "localizations" : {
+        "tr" : { "stringUnit" : { "state" : "translated", "value" : "%lld sa kaldı" } }
+      }
+    },
+    "%lldm" : {
+      "localizations" : {
+        "tr" : { "stringUnit" : { "state" : "translated", "value" : "%lld dk" } }
+      }
+    },
+    "%lldm left" : {
+      "localizations" : {
+        "tr" : { "stringUnit" : { "state" : "translated", "value" : "%lld dk kaldı" } }
+      }
+    },
+    "%llds" : {
+      "localizations" : {
+        "tr" : { "stringUnit" : { "state" : "translated", "value" : "%lld sn" } }
+      }
+    },
+    "%llds left" : {
+      "localizations" : {
+        "tr" : { "stringUnit" : { "state" : "translated", "value" : "%lld sn kaldı" } }
+      }
+    },
+    "Today %@" : {
+      "localizations" : {
+        "tr" : { "stringUnit" : { "state" : "translated", "value" : "Bugün %@" } }
+      }
+    },
+    "Yesterday %@" : {
+      "localizations" : {
+        "tr" : { "stringUnit" : { "state" : "translated", "value" : "Dün %@" } }
+      }
+    },
+    "ended" : {
+      "localizations" : {
+        "tr" : { "stringUnit" : { "state" : "translated", "value" : "bitti" } }
+      }
+    },
+    "now" : {
+      "localizations" : {
+        "tr" : { "stringUnit" : { "state" : "translated", "value" : "şimdi" } }
+      }
+    },
+    "yest." : {
+      "localizations" : {
+        "tr" : { "stringUnit" : { "state" : "translated", "value" : "dün" } }
+      }
+    }
+  },
+  "version" : "1.0"
+}
